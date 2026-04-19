@@ -30,6 +30,10 @@
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
+    /* Smooth scroll for navbar links */
+    html {
+      scroll-behavior: smooth;
+    }
   </style>
 </head>
 <body>
@@ -37,8 +41,8 @@
 
   <script type="text/babel" data-type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-    import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-    import { getDatabase, ref, onValue, push } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, sendEmailVerification, updateProfile } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getDatabase, ref, onValue, push, set } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
 
     const { useState, useEffect } = React;
 
@@ -92,7 +96,7 @@
       return (
         <div className="grid grid-cols-2 md:grid-cols-4 w-full h-[50vh] md:h-[65vh]">
           {cats.map((cat, i) => (
-            <div key={i} className="relative group overflow-hidden cursor-pointer">
+            <div key={i} className="relative group overflow-hidden cursor-pointer" onClick={() => { if(cat.active) document.getElementById('products-section')?.scrollIntoView({behavior: 'smooth'}) }}>
               <img src={cat.img} alt={cat.title} className={`w-full h-full object-cover transition-transform duration-1000 ${cat.active ? 'group-hover:scale-105' : 'opacity-80 grayscale-[20%]'}`} />
               <div className={`absolute inset-0 bg-black/20 ${cat.active ? 'group-hover:bg-black/30' : 'bg-black/40'} transition-colors duration-300`}></div>
               <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center">
@@ -122,8 +126,8 @@
             {imgs.map((img, i) => (
               <div key={i} className="aspect-square bg-gray-100 overflow-hidden relative group">
                 <img src={img} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-300 flex items-center justify-center">
-                  <div className="text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300"><IconInstagram /></div>
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors duration-300 flex items-center justify-center">
+                  <a href="#" target="_blank" title="View on Instagram" className="text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300 transform group-hover:scale-110"><IconInstagram /></a>
                 </div>
               </div>
             ))}
@@ -145,7 +149,7 @@
     );
 
     const Footer = () => (
-      <footer className="bg-[#fafafa] pt-10">
+      <footer id="footer-section" className="bg-[#fafafa] pt-10">
         <FeaturedMarquee />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-12 md:gap-8">
@@ -158,14 +162,14 @@
             <div>
               <h4 className="text-sm font-bold tracking-widest uppercase mb-6">Shop</h4>
               <ul className="space-y-4 text-sm text-gray-500">
-                <li><a href="#" className="hover:text-black">Silver Earrings</a></li>
-                <li><a href="#" className="hover:text-black">Custom Initials</a></li>
+                <li><a href="#products-section" className="hover:text-black">Silver Earrings</a></li>
+                <li><a href="#products-section" className="hover:text-black">Custom Initials</a></li>
               </ul>
             </div>
             <div>
               <h4 className="text-sm font-bold tracking-widest uppercase mb-6">Help</h4>
               <ul className="space-y-4 text-sm text-gray-500">
-                <li><a href="#" className="hover:text-black">Contact Us</a></li>
+                <li><a href="mailto:blazejewellery.in@gmail.com" className="hover:text-black">Contact Us</a></li>
                 <li><a href="#" className="hover:text-black">Shipping & Returns</a></li>
               </ul>
             </div>
@@ -174,13 +178,18 @@
       </footer>
     );
 
-    const AuthModal = ({ onClose, user }) => {
+    // --- AUTHENTICATION MODAL (WITH PRO PROFILE FIELDS) ---
+    const AuthModal = ({ onClose, user, db }) => {
       const [isLogin, setIsLogin] = useState(true);
       const [email, setEmail] = useState('');
       const [password, setPassword] = useState('');
+      const [name, setName] = useState('');
+      const [phone, setPhone] = useState('');
+      const [address, setAddress] = useState('');
+      const [pincode, setPincode] = useState('');
       const [error, setError] = useState('');
       const [orders, setOrders] = useState([]);
-      const [tab, setTab] = useState('auth'); // auth, history
+      const [tab, setTab] = useState('auth'); 
 
       useEffect(() => {
         if (user && !user.isAnonymous) {
@@ -199,9 +208,30 @@
         setError('');
         try {
           if (isLogin) {
-            await signInWithEmailAndPassword(auth, email, password);
+            const userCred = await signInWithEmailAndPassword(auth, email, password);
+            if (!userCred.user.emailVerified) {
+              alert("Please verify your email address. Kindly check your inbox and spam folder. If you still have issues, mail us at blazejewellery.in@gmail.com");
+            } else {
+              alert("Logged in successfully!");
+              onClose();
+            }
           } else {
-            await createUserWithEmailAndPassword(auth, email, password);
+            // Create user
+            const userCred = await createUserWithEmailAndPassword(auth, email, password);
+            
+            // Update Auth Profile
+            await updateProfile(userCred.user, { displayName: name });
+            
+            // Send Verification Email
+            await sendEmailVerification(userCred.user);
+            
+            // Save professional profile to Database
+            await set(ref(db, `users/${userCred.user.uid}`), {
+              name, phone, address, pincode, email, createdAt: Date.now()
+            });
+
+            alert("Account created! A verification link has been sent to your email. Please check your SPAM folder. If not received, contact blazejewellery.in@gmail.com");
+            onClose();
           }
         } catch (err) {
           setError(err.message.replace('Firebase: ', ''));
@@ -218,16 +248,37 @@
                 <h2 className="text-2xl font-bold uppercase tracking-widest mb-6 text-center">
                   {isLogin ? 'Welcome Back' : 'Create Account'}
                 </h2>
-                {error && <div className="bg-red-50 text-red-600 p-3 text-sm mb-4 rounded">{error}</div>}
+                {error && <div className="bg-red-50 text-red-600 p-3 text-sm mb-4 rounded border border-red-200">{error}</div>}
                 <form onSubmit={handleSubmit} className="space-y-4">
+                  {!isLogin && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Full Name</label>
+                        <input type="text" required value={name} onChange={e => setName(e.target.value)} className="w-full border p-3 rounded text-sm bg-gray-50" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Phone Number</label>
+                        <input type="tel" required value={phone} onChange={e => setPhone(e.target.value)} className="w-full border p-3 rounded text-sm bg-gray-50" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Complete Address</label>
+                        <textarea required value={address} onChange={e => setAddress(e.target.value)} className="w-full border p-3 rounded text-sm h-16 bg-gray-50"></textarea>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">PIN Code</label>
+                        <input type="text" required value={pincode} onChange={e => setPincode(e.target.value)} className="w-full border p-3 rounded text-sm bg-gray-50" />
+                      </div>
+                    </>
+                  )}
                   <div>
                     <label className="block text-sm font-medium mb-1">Email Address</label>
-                    <input type="email" required value={email} onChange={e => setEmail(e.target.value)} className="w-full border p-3 rounded" />
+                    <input type="email" required value={email} onChange={e => setEmail(e.target.value)} className="w-full border p-3 rounded text-sm" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">Password</label>
-                    <input type="password" required value={password} onChange={e => setPassword(e.target.value)} className="w-full border p-3 rounded" />
+                    <input type="password" required value={password} onChange={e => setPassword(e.target.value)} className="w-full border p-3 rounded text-sm" />
                   </div>
+                  
                   <button type="submit" className="w-full bg-black text-white py-3 font-bold uppercase tracking-widest mt-4">
                     {isLogin ? 'Sign In' : 'Register'}
                   </button>
@@ -246,7 +297,7 @@
                 <h2 className="text-xl font-bold uppercase tracking-widest mb-6 border-b pb-4">My Account</h2>
                 <div className="mb-6">
                   <p className="text-sm text-gray-600 mb-2">Signed in as: <b>{user.email}</b></p>
-                  <button onClick={() => { signOut(auth); onClose(); }} className="text-xs bg-gray-200 px-3 py-1 rounded font-bold uppercase">Logout</button>
+                  <button onClick={() => { signOut(auth); onClose(); }} className="text-xs bg-gray-200 px-3 py-1 rounded font-bold uppercase hover:bg-gray-300">Logout</button>
                 </div>
                 <h3 className="font-bold uppercase tracking-widest text-sm mb-4 text-gray-500">Order History</h3>
                 {orders.length === 0 ? (
@@ -275,23 +326,30 @@
       );
     };
 
-    const Checkout = ({ cart, total, onCancel, onSubmit }) => {
-      const [form, setForm] = useState({ name: '', email: '', phone: '', address: '' });
+    // --- CHECKOUT WITH AUTO-FILL ---
+    const Checkout = ({ cart, total, onCancel, onSubmit, userData }) => {
+      // Auto-fill forms if the user is registered!
+      const [form, setForm] = useState({ 
+        name: userData?.name || '', 
+        email: userData?.email || '', 
+        phone: userData?.phone || '', 
+        address: userData?.address ? `${userData.address}\nPIN: ${userData.pincode}` : '' 
+      });
 
       return (
         <div className="min-h-screen bg-gray-50 p-4 md:p-8">
           <div className="max-w-3xl mx-auto bg-white p-6 md:p-10 rounded shadow">
-            <button onClick={onCancel} className="text-sm text-gray-500 mb-6 hover:text-black">← Back to Store</button>
+            <button onClick={onCancel} className="text-sm text-gray-500 mb-6 hover:text-black font-medium">← Back to Store</button>
             <h1 className="text-2xl font-bold uppercase tracking-widest mb-8 border-b pb-4">Checkout</h1>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
               <div>
                 <h2 className="font-bold mb-4">Shipping Details</h2>
                 <div className="space-y-4">
-                  <input type="text" placeholder="Full Name" className="w-full border p-3 rounded text-sm" required onChange={e => setForm({...form, name: e.target.value})} />
-                  <input type="email" placeholder="Email Address" className="w-full border p-3 rounded text-sm" required onChange={e => setForm({...form, email: e.target.value})} />
-                  <input type="tel" placeholder="WhatsApp Number" className="w-full border p-3 rounded text-sm" required onChange={e => setForm({...form, phone: e.target.value})} />
-                  <textarea placeholder="Complete Delivery Address" className="w-full border p-3 rounded text-sm h-24" required onChange={e => setForm({...form, address: e.target.value})}></textarea>
+                  <input type="text" placeholder="Full Name" value={form.name} className="w-full border p-3 rounded text-sm" required onChange={e => setForm({...form, name: e.target.value})} />
+                  <input type="email" placeholder="Email Address" value={form.email} className="w-full border p-3 rounded text-sm" required onChange={e => setForm({...form, email: e.target.value})} />
+                  <input type="tel" placeholder="Phone Number" value={form.phone} className="w-full border p-3 rounded text-sm" required onChange={e => setForm({...form, phone: e.target.value})} />
+                  <textarea placeholder="Complete Delivery Address & PIN Code" value={form.address} className="w-full border p-3 rounded text-sm h-24" required onChange={e => setForm({...form, address: e.target.value})}></textarea>
                 </div>
               </div>
               <div className="bg-gray-50 p-6 rounded">
@@ -321,6 +379,7 @@
 
     function App() {
       const [user, setUser] = useState(null);
+      const [userData, setUserData] = useState(null); // Holds extra profile data
       const [view, setView] = useState('store'); 
       const [products, setProducts] = useState([]);
       const [loading, setLoading] = useState(true);
@@ -348,8 +407,11 @@
         return onAuthStateChanged(auth, setUser);
       }, []);
 
+      // Fetch products and user's profile details
       useEffect(() => {
         if (!user) return;
+        
+        // Products Listener
         const productsRef = ref(db, PRODUCTS_PATH);
         const unsubProducts = onValue(productsRef, (snapshot) => {
           const data = snapshot.val();
@@ -357,6 +419,16 @@
           setProducts(p.sort((a, b) => b.createdAt - a.createdAt));
           setLoading(false);
         });
+
+        // User Data Listener (for checkout auto-fill)
+        if (!user.isAnonymous) {
+          onValue(ref(db, `users/${user.uid}`), (snap) => {
+            if(snap.exists()) setUserData(snap.val());
+          });
+        } else {
+          setUserData(null);
+        }
+
         return () => unsubProducts();
       }, [user]);
 
@@ -404,8 +476,13 @@
       });
 
       if (view === 'checkout') {
-        return <Checkout cart={cart} total={cartTotal} onCancel={() => setView('store')} onSubmit={handleCheckout} />;
+        return <Checkout cart={cart} total={cartTotal} onCancel={() => setView('store')} onSubmit={handleCheckout} userData={userData} />;
       }
+
+      const scrollToSection = (id, category = null) => {
+        if(category) setSelectedCategory(category);
+        document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+      };
 
       return (
         <div className="min-h-screen bg-white font-sans relative">
@@ -416,12 +493,12 @@
               <div className="flex justify-between items-center h-20">
                 <div className="flex flex-1 items-center space-x-6">
                   <button className="lg:hidden p-2 -ml-2"><IconMenu /></button>
-                  {/* Proper Navigation Links */}
+                  {/* Working Navigation Links */}
                   <div className="hidden lg:flex space-x-6 text-xs font-bold tracking-widest uppercase text-gray-500">
-                    <a href="#" className="text-black">JEWELLERY</a>
-                    <a href="#" className="hover:text-black transition-colors">BEST SELLERS</a>
-                    <a href="#" className="hover:text-black transition-colors">COLLECTIONS</a>
-                    <a href="#" className="hover:text-black transition-colors">GIFTS</a>
+                    <a href="#products-section" onClick={(e) => { e.preventDefault(); scrollToSection('products-section', 'All'); }} className="hover:text-black transition-colors">JEWELLERY</a>
+                    <a href="#products-section" onClick={(e) => { e.preventDefault(); scrollToSection('products-section', 'Earrings'); }} className="hover:text-black transition-colors">BEST SELLERS</a>
+                    <a href="#products-section" onClick={(e) => { e.preventDefault(); scrollToSection('products-section'); }} className="hover:text-black transition-colors">COLLECTIONS</a>
+                    <a href="#footer-section" onClick={(e) => { e.preventDefault(); scrollToSection('footer-section'); }} className="hover:text-black transition-colors">GIFTS</a>
                   </div>
                 </div>
                 
@@ -456,7 +533,7 @@
             </div>
           </nav>
 
-          {isAuthOpen && <AuthModal onClose={() => setIsAuthOpen(false)} user={user} />}
+          {isAuthOpen && <AuthModal onClose={() => setIsAuthOpen(false)} user={user} db={db} />}
 
           {/* Quickview Modal */}
           {quickViewProduct && (
@@ -539,11 +616,11 @@
             <div className="absolute inset-0 bg-black/20"></div>
             <div className="relative text-center text-white z-10 p-4 mt-20">
               <h1 className="text-sm font-bold tracking-[0.2em] uppercase mb-4 drop-shadow">Blaze Bestseller</h1>
-              <button className="bg-white text-black px-8 py-3 text-sm font-bold tracking-widest uppercase hover:bg-gray-100 transition">Shop Now</button>
+              <button onClick={() => scrollToSection('products-section', 'All')} className="bg-white text-black px-8 py-3 text-sm font-bold tracking-widest uppercase hover:bg-gray-100 transition">Shop Now</button>
             </div>
           </div>
 
-          <div className="max-w-7xl mx-auto px-4 py-16">
+          <div id="products-section" className="max-w-7xl mx-auto px-4 py-16">
             <div className="flex flex-col md:flex-row justify-between items-center mb-10">
               <h2 className="text-xl md:text-2xl font-bold tracking-widest uppercase">Fine Jewelry</h2>
               
